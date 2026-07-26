@@ -208,6 +208,27 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data.startswith("cal|"):
+        # Admin: viewing bookings for a date
+        if ctx.user_data.get("admin_flow") and uid in ADMIN_IDS:
+            _, iso_date = data.split("|")
+            d = date.fromisoformat(iso_date)
+            bookings = db.get_all_bookings_for_date(iso_date)
+            if not bookings:
+                text = f"📋 Записи на {d.strftime('%d.%m.%Y')}: нет записей"
+            else:
+                text = f"📋 <b>Записи на {d.strftime('%d.%m.%Y')}:</b>\n\n"
+                for b in bookings:
+                    text += (
+                        f"🕐 {b['slot_start']}–{b['slot_end']}  "
+                        f"👤 {b['user_name']} (id:{b['user_id']})\n"
+                        f"   🚿 {b['service_name']}  💰 {b['price']}₽\n\n"
+                    )
+            ctx.user_data.pop("admin_flow", None)
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_back")]])
+            await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
+            return
+
+        # Normal booking: pick date → show slots
         _, iso_date = data.split("|")
         d = date.fromisoformat(iso_date)
         service_id = ctx.user_data.get("service_id")
@@ -231,7 +252,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _edit_or_send(
             query,
             f"🕐 <b>Свободные окна</b>\n"
-            f"{wd}, {d.strftime('%d.%m.%Y')}  •  {svc['name']} ({svc['slots'] * 30} мин)",
+            f"{wd}, {d.strftime('%d.%m.%Y')}  •  {svc['name']} ({svc['slots'] * SLOT_DURATION_MIN} мин)",
             reply_markup=slots_keyboard(slots, iso_date, service_id),
             parse_mode=ParseMode.HTML,
         )
@@ -487,7 +508,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text = "🔧 <b>Услуги:</b>\n\n"
             for s in services:
                 status = "✅" if s["active"] else "❌"
-                text += f"{status} #{s['id']} {s['name']} — {s['price']}₽ ({s['slots'] * 30} мин)\n"
+                text += f"{status} #{s['id']} {s['name']} — {s['price']}₽ ({s['slots'] * SLOT_DURATION_MIN} мин)\n"
             kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_back")]])
             await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
@@ -499,24 +520,4 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "cal_ignore":
         pass  # non-clickable calendar cell
 
-    else:
-        # If admin is picking a date for viewing bookings
-        if ctx.user_data.get("admin_flow") and data.startswith("cal|"):
-            if uid not in ADMIN_IDS:
-                return
-            _, iso_date = data.split("|")
-            bookings = db.get_all_bookings_for_date(iso_date)
-            d = date.fromisoformat(iso_date)
-            if not bookings:
-                text = f"📋 Записи на {d.strftime('%d.%m.%Y')}: нет записей"
-            else:
-                text = f"📋 <b>Записи на {d.strftime('%d.%m.%Y')}:</b>\n\n"
-                for b in bookings:
-                    text += (
-                        f"🕐 {b['slot_start']}–{b['slot_end']}  "
-                        f"👤 {b['user_name']} (id:{b['user_id']})\n"
-                        f"   🚿 {b['service_name']}  💰 {b['price']}₽\n\n"
-                    )
-            ctx.user_data.pop("admin_flow", None)
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="admin_back")]])
-            await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
