@@ -20,9 +20,10 @@ from keyboards import (
 
 def _schedule_reminder(job_queue, booking_id: int,
                        user_id: int, booking_date: str, slot_start: str, remind_before: int):
-    """Schedule a reminder for a booking. Accepts a JobQueue object or a context with .job_queue."""
-    # Support both JobQueue directly and context objects with .job_queue
-    jq = getattr(job_queue, 'job_queue', job_queue)
+    """Schedule a reminder for a booking."""
+    jq = job_queue
+    if jq is None:
+        return
 
     dt = datetime.strptime(f"{booking_date} {slot_start}", "%Y-%m-%d %H:%M")
     remind_at = dt - timedelta(minutes=remind_before)
@@ -375,7 +376,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             bk = db.get_booking(booking_id)
             if bk:
-                _schedule_reminder(ctx, booking_id, uid,
+                _schedule_reminder(ctx.job_queue, booking_id, uid,
                                    bk["booking_date"], bk["slot_start"], remind_before)
 
             label = {30: "30 минут", 60: "1 час", 120: "2 часа", 1440: "день"}.get(remind_before, f"{remind_before} мин")

@@ -47,9 +47,12 @@ WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 @web_app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
     """Receive Telegram updates and process them."""
-    data = await request.json()
-    update = Update.de_json(data, ptb_app.bot)
-    await ptb_app.process_update(update)
+    try:
+        data = await request.json()
+        update = Update.de_json(data, ptb_app.bot)
+        await ptb_app.process_update(update)
+    except Exception as e:
+        logger.error(f"Error processing update: {e}", exc_info=True)
     return JSONResponse({"ok": True})
 
 
@@ -62,16 +65,24 @@ async def on_startup():
     await ptb_app.initialize()
     await ptb_app.start()
 
+    # Auto-detect Render external URL
     render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    if not render_url:
+        # Fallback: construct from RENDER_EXTERNAL_HOSTNAME (always set on Render Web Services)
+        hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
+        if hostname:
+            render_url = f"https://{hostname}"
+            logger.info(f"Constructed URL from RENDER_EXTERNAL_HOSTNAME: {render_url}")
+
     if render_url:
         webhook_url = f"{render_url}{WEBHOOK_PATH}"
         await ptb_app.bot.set_webhook(webhook_url, drop_pending_updates=True)
         logger.info(f"Webhook set: {webhook_url}")
     else:
-        logger.warning(
-            "RENDER_EXTERNAL_URL is NOT set! Webhook was NOT registered. "
-            "Set this variable in Render dashboard (e.g. https://your-app.onrender.com). "
-            "Bot will NOT receive messages without it!"
+        logger.error(
+            "Cannot set webhook: RENDER_EXTERNAL_URL and RENDER_EXTERNAL_HOSTNAME are both missing! "
+            "Ensure this is deployed as a Render Web Service (not a Worker). "
+            "Bot will NOT receive messages."
         )
 
     # Restore reminders
