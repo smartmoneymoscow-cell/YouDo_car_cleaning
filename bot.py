@@ -67,24 +67,33 @@ async def on_startup():
         webhook_url = f"{render_url}{WEBHOOK_PATH}"
         await ptb_app.bot.set_webhook(webhook_url, drop_pending_updates=True)
         logger.info(f"Webhook set: {webhook_url}")
+    else:
+        logger.warning(
+            "RENDER_EXTERNAL_URL is NOT set! Webhook was NOT registered. "
+            "Set this variable in Render dashboard (e.g. https://your-app.onrender.com). "
+            "Bot will NOT receive messages without it!"
+        )
 
     # Restore reminders
-    conn = db.get_conn()
-    rows = conn.execute(
-        "SELECT id, user_id, booking_date, slot_start, remind_before "
-        "FROM bookings WHERE status='confirmed' AND remind_before > 0"
-    ).fetchall()
-    conn.close()
-    restored = 0
-    for r in rows:
-        dt = datetime.strptime(f"{r['booking_date']} {r['slot_start']}", "%Y-%m-%d %H:%M")
-        remind_at = dt - timedelta(minutes=r["remind_before"])
-        if remind_at > datetime.now():
-            _schedule_reminder(ptb_app, r["id"], r["user_id"],
-                               r["booking_date"], r["slot_start"], r["remind_before"])
-            restored += 1
-    if restored:
-        logger.info(f"Restored {restored} pending reminders")
+    try:
+        conn = db.get_conn()
+        rows = conn.execute(
+            "SELECT id, user_id, booking_date, slot_start, remind_before "
+            "FROM bookings WHERE status='confirmed' AND remind_before > 0"
+        ).fetchall()
+        conn.close()
+        restored = 0
+        for r in rows:
+            dt = datetime.strptime(f"{r['booking_date']} {r['slot_start']}", "%Y-%m-%d %H:%M")
+            remind_at = dt - timedelta(minutes=r["remind_before"])
+            if remind_at > datetime.now():
+                _schedule_reminder(ptb_app.job_queue, r["id"], r["user_id"],
+                                   r["booking_date"], r["slot_start"], r["remind_before"])
+                restored += 1
+        if restored:
+            logger.info(f"Restored {restored} pending reminders")
+    except Exception as e:
+        logger.error(f"Failed to restore reminders: {e}")
 
 
 @web_app.on_event("shutdown")

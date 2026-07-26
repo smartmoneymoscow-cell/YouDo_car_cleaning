@@ -18,9 +18,12 @@ from keyboards import (
 
 # ── Reminder scheduler ────────────────────────────────────
 
-def _schedule_reminder(context: ContextTypes.DEFAULT_TYPE, booking_id: int,
+def _schedule_reminder(job_queue, booking_id: int,
                        user_id: int, booking_date: str, slot_start: str, remind_before: int):
-    """Schedule a reminder for a booking."""
+    """Schedule a reminder for a booking. Accepts a JobQueue object or a context with .job_queue."""
+    # Support both JobQueue directly and context objects with .job_queue
+    jq = getattr(job_queue, 'job_queue', job_queue)
+
     dt = datetime.strptime(f"{booking_date} {slot_start}", "%Y-%m-%d %H:%M")
     remind_at = dt - timedelta(minutes=remind_before)
     now = datetime.now()
@@ -30,7 +33,7 @@ def _schedule_reminder(context: ContextTypes.DEFAULT_TYPE, booking_id: int,
 
     job_name = f"remind_{booking_id}"
     # Remove existing job with same name
-    for job in context.job_queue.get_jobs_by_name(job_name):
+    for job in jq.get_jobs_by_name(job_name):
         job.schedule_removal()
 
     async def _send_reminder(ctx: ContextTypes.DEFAULT_TYPE):
@@ -45,7 +48,7 @@ def _schedule_reminder(context: ContextTypes.DEFAULT_TYPE, booking_id: int,
         )
         await ctx.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
 
-    context.job_queue.run_once(_send_reminder, delay, name=job_name)
+    jq.run_once(_send_reminder, delay, name=job_name)
 
 
 # ── Helper ────────────────────────────────────────────────

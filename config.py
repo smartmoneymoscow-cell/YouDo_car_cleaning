@@ -1,8 +1,12 @@
 """Configuration for Car Wash Bot."""
 
 import os
+import sys
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8802071427:AAErTdX2p9O5Pkwx0_dqbxuf5gAcclwP9Gg")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+if not BOT_TOKEN:
+    print("ERROR: BOT_TOKEN environment variable is not set!", file=sys.stderr)
+    sys.exit(1)
 
 # Comma-separated admin chat IDs
 _admin_raw = os.getenv("ADMIN_IDS", "")
