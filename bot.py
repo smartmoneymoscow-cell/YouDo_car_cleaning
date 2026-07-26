@@ -2,7 +2,10 @@
 
 import os
 import logging
+import asyncio
 from datetime import datetime, timedelta
+
+import httpx
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -106,11 +109,36 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Failed to restore reminders: {e}")
 
+    # Start keep-alive background task
+    asyncio.create_task(_keep_alive())
+    logger.info("Keep-alive task started (ping every 10 min)")
+
 
 @web_app.on_event("shutdown")
 async def on_shutdown():
     await ptb_app.stop()
     await ptb_app.shutdown()
+
+
+# ── Keep-alive ping (Render free tier sleeps after 15 min idle) ──
+
+async def _keep_alive():
+    """Ping own URL every 10 min to prevent Render free tier from sleeping."""
+    await asyncio.sleep(5)  # wait for server to fully start
+    while True:
+        try:
+            render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+            if not render_url:
+                hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "")
+                if hostname:
+                    render_url = f"https://{hostname}"
+            if render_url:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(f"{render_url}/")
+                    logger.info(f"Keep-alive ping: {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Keep-alive ping failed: {e}")
+        await asyncio.sleep(600)  # every 10 minutes
 
 
 def main():
