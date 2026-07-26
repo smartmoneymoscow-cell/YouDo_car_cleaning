@@ -2,8 +2,6 @@
 
 import os
 import logging
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, Defaults,
@@ -21,35 +19,13 @@ logging.basicConfig(
 logger = logging.getLogger("carwash")
 
 
-# ── Health check server ──────────────────────────────────
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-    def log_message(self, *args):
-        pass  # silence logs
-
-
-def start_health_server():
-    port = int(os.getenv("PORT", "10000"))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
-    logger.info(f"Health server on port {port}")
-    server.serve_forever()
-
-
-# ── Reminders restore ────────────────────────────────────
-
 async def post_init(app):
-    """Restore pending reminders after bot restart."""
     conn = db.get_conn()
     rows = conn.execute(
         "SELECT id, user_id, booking_date, slot_start, remind_before "
         "FROM bookings WHERE status='confirmed' AND remind_before > 0"
     ).fetchall()
     conn.close()
-
     restored = 0
     for r in rows:
         dt = datetime.strptime(f"{r['booking_date']} {r['slot_start']}", "%Y-%m-%d %H:%M")
@@ -66,8 +42,9 @@ def main():
     db.init_db()
     logger.info("Database initialized")
 
-    # Start health check server in background thread
-    threading.Thread(target=start_health_server, daemon=True).start()
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    logger.info(f"RENDER_EXTERNAL_URL={render_url}")
+    logger.info(f"PORT={PORT}")
 
     app = (
         ApplicationBuilder()
@@ -77,7 +54,6 @@ def main():
         .build()
     )
 
-    # Register handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("mybookings", cmd_mybookings))
@@ -85,8 +61,20 @@ def main():
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    logger.info("Bot starting (polling mode)")
-    app.run_polling(drop_pending_updates=True)
+    if render_url:
+        webhook_path = f"/webhook/{BOT_TOKEN}"
+        webhook_url = f"{render_url}{webhook_path}"
+        logger.info(f"Webhook mode: {webhook_url}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=webhook_path,
+            webhook_url=webhook_url,
+            drop_pending_updates=True,
+        )
+    else:
+        logger.info("Polling mode")
+        app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
