@@ -71,6 +71,7 @@ def main():
             url_path=webhook_path,
             webhook_url=webhook_url,
             drop_pending_updates=True,
+            health_path="/health",
         )
     else:
         logger.info("Polling mode")
