@@ -1,8 +1,11 @@
-"""Main entry point for Car Wash Telegram Bot."""
+"""Main entry point: Telegram bot (polling) + FastAPI web server."""
 
 import os
 import logging
+import threading
 from datetime import datetime, timedelta
+
+import uvicorn
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, Defaults,
 )
@@ -11,6 +14,7 @@ from telegram.constants import ParseMode
 from config import BOT_TOKEN, PORT
 import database as db
 from handlers import cmd_start, cmd_help, cmd_mybookings, cmd_cancel, cmd_admin, callback_handler, _schedule_reminder
+from api import app as web_app
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -20,6 +24,7 @@ logger = logging.getLogger("carwash")
 
 
 async def post_init(app):
+    """Restore pending reminders after bot restart."""
     conn = db.get_conn()
     rows = conn.execute(
         "SELECT id, user_id, booking_date, slot_start, remind_before "
@@ -38,13 +43,11 @@ async def post_init(app):
         logger.info(f"Restored {restored} pending reminders")
 
 
-def main():
-    db.init_db()
-    logger.info("Database initialized")
-
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "")
-    logger.info(f"RENDER_EXTERNAL_URL={render_url}")
-    logger.info(f"PORT={PORT}")
+def run_bot():
+    """Run Telegram bot in polling mode (background thread)."""
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     app = (
         ApplicationBuilder()
@@ -61,21 +64,21 @@ def main():
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    if render_url:
-        webhook_path = f"/webhook/{BOT_TOKEN}"
-        webhook_url = f"{render_url}{webhook_path}"
-        logger.info(f"Webhook mode: {webhook_url}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=webhook_path,
-            webhook_url=webhook_url,
-            drop_pending_updates=True,
-            health_path="/health",
-        )
-    else:
-        logger.info("Polling mode")
-        app.run_polling(drop_pending_updates=True)
+    logger.info("Bot starting (polling mode)")
+    app.run_polling(drop_pending_updates=True)
+
+
+def main():
+    db.init_db()
+    logger.info("Database initialized")
+
+    # Start bot polling in background thread
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    # Start FastAPI web server (main thread — Render health checks hit this)
+    logger.info(f"Web server starting on port {PORT}")
+    uvicorn.run(web_app, host="0.0.0.0", port=PORT, log_level="info")
 
 
 if __name__ == "__main__":

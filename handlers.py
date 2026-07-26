@@ -1,7 +1,8 @@
 """Message and callback query handlers."""
 
+import os
 from datetime import date, datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
@@ -71,8 +72,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🚗 <b>Добро пожаловать в автомойку!</b>\n\n"
         "Выберите действие:"
     )
+    webapp_url = os.getenv("RENDER_EXTERNAL_URL", "http://localhost:10000")
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Записаться", callback_data="new_booking")],
+        [InlineKeyboardButton("🌐 Записаться (приложение)", web_app=WebAppInfo(url=webapp_url))],
         [InlineKeyboardButton("📋 Мои записи", callback_data="show_my_bookings")],
         [InlineKeyboardButton("ℹ️ Помощь", callback_data="help")],
     ])
