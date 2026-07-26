@@ -20,7 +20,7 @@ MAX_ADVANCE_DAYS = 30
 DB_PATH = os.getenv("DB_PATH", "carwash.db")
 
 # Webhook port (Render sets PORT automatically)
-PORT = int(os.getenv("PORT", "8443"))
+PORT = int(os.getenv("PORT", "10000"))
 
 # Default services (name, price_rub, duration_slots)
 DEFAULT_SERVICES = [

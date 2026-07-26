@@ -2,6 +2,8 @@
 
 import os
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler, Defaults,
@@ -18,6 +20,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("carwash")
 
+
+# ── Health check server ──────────────────────────────────
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+    def log_message(self, *args):
+        pass  # silence logs
+
+
+def start_health_server():
+    port = int(os.getenv("PORT", "10000"))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    logger.info(f"Health server on port {port}")
+    server.serve_forever()
+
+
+# ── Reminders restore ────────────────────────────────────
 
 async def post_init(app):
     """Restore pending reminders after bot restart."""
@@ -44,8 +66,8 @@ def main():
     db.init_db()
     logger.info("Database initialized")
 
-    mode = os.getenv("BOT_MODE", "webhook")  # webhook or polling
-    render_url = os.getenv("RENDER_EXTERNAL_URL", "")  # auto-set by Render
+    # Start health check server in background thread
+    threading.Thread(target=start_health_server, daemon=True).start()
 
     app = (
         ApplicationBuilder()
@@ -63,21 +85,8 @@ def main():
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    if mode == "webhook" and render_url:
-        webhook_path = f"/webhook/{BOT_TOKEN}"
-        webhook_url = f"{render_url}{webhook_path}"
-        logger.info(f"Starting webhook mode on port {PORT}")
-        logger.info(f"Webhook URL: {webhook_url}")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=webhook_path,
-            webhook_url=webhook_url,
-            drop_pending_updates=True,
-        )
-    else:
-        logger.info("Starting polling mode")
-        app.run_polling(drop_pending_updates=True)
+    logger.info("Bot starting (polling mode)")
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
