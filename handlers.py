@@ -9,7 +9,8 @@ import database as db
 from config import ADMIN_IDS, MAX_ADVANCE_DAYS, SLOT_DURATION_MIN
 from keyboards import (
     calendar_keyboard, services_keyboard, slots_keyboard,
-    confirm_keyboard, my_bookings_keyboard, cancel_booking_keyboard,
+    confirm_keyboard, reminder_keyboard, reminder_time_keyboard,
+    my_bookings_keyboard, cancel_booking_keyboard,
     admin_keyboard,
 )
 
@@ -167,7 +168,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _edit_or_send(
             query,
             f"📅 <b>Выберите дату</b>  (услуга: {svc['name']})",
-            reply_markup=calendar_keyboard(today.year, today.month),
+            reply_markup=calendar_keyboard(today.year, today.month, service_id),
             parse_mode=ParseMode.HTML,
         )
 
@@ -196,7 +197,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _edit_or_send(
             query,
             f"📅 <b>Выберите дату</b>  (услуга: {label})",
-            reply_markup=calendar_keyboard(year, month),
+            reply_markup=calendar_keyboard(year, month, service_id or 0),
             parse_mode=ParseMode.HTML,
         )
 
@@ -237,7 +238,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _edit_or_send(
             query,
             f"📅 <b>Выберите дату</b>  (услуга: {svc['name']})",
-            reply_markup=calendar_keyboard(today.year, today.month),
+            reply_markup=calendar_keyboard(today.year, today.month, service_id),
             parse_mode=ParseMode.HTML,
         )
 
@@ -265,7 +266,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🕐 Время: <b>{slot_time} – {slot_end}</b>\n"
             f"💰 Стоимость: <b>{svc['price']} ₽</b>\n"
         )
-        await _edit_or_send(query, text, reply_markup=confirm_keyboard(), parse_mode=ParseMode.HTML)
+        await _edit_or_send(query, text, reply_markup=confirm_keyboard(service_id, iso_date), parse_mode=ParseMode.HTML)
 
     elif data == "confirm|yes":
         service_id = ctx.user_data.get("service_id")
@@ -304,11 +305,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Номер записи: <b>#{booking_id}</b>\n\n"
             f"⏰ Хотите получить напоминание перед мойкой?"
         )
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Да, напомнить", callback_data=f"remind|{booking_id}|ask")],
-            [InlineKeyboardButton("🚫 Нет, спасибо", callback_data=f"remind|{booking_id}|no")],
-        ])
-        await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        await _edit_or_send(query, text, reply_markup=reminder_keyboard(booking_id), parse_mode=ParseMode.HTML)
 
     # ── Reminder flow ──────────────────────────────────────
     elif data.startswith("remind|"):
@@ -343,13 +340,7 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
         elif action == "ask":
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("За 30 минут", callback_data=f"remind|{booking_id}|30")],
-                [InlineKeyboardButton("За 1 час", callback_data=f"remind|{booking_id}|60")],
-                [InlineKeyboardButton("За 2 часа", callback_data=f"remind|{booking_id}|120")],
-                [InlineKeyboardButton("За день", callback_data=f"remind|{booking_id}|1440")],
-            ])
-            await _edit_or_send(query, "⏰ <b>За сколько напомнить?</b>", reply_markup=kb, parse_mode=ParseMode.HTML)
+            await _edit_or_send(query, "⏰ <b>За сколько напомнить?</b>", reply_markup=reminder_time_keyboard(booking_id), parse_mode=ParseMode.HTML)
 
         elif action.isdigit():
             remind_before = int(action)
@@ -372,6 +363,34 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif data == "confirm|no":
         ctx.user_data.clear()
         await cmd_start(update, ctx)
+
+    # ── Back buttons ──────────────────────────────────────
+    elif data == "back_to_services":
+        services = db.get_services()
+        await _edit_or_send(
+            query,
+            "🚿 <b>Выберите услугу:</b>",
+            reply_markup=services_keyboard(services),
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("back_to_slots|"):
+        _, service_id_str, booking_date = data.split("|")
+        service_id = int(service_id_str)
+        svc = db.get_service(service_id)
+        slots = db.get_available_slots(booking_date, service_id)
+        if not slots:
+            await _edit_or_send(query, "😕 Нет свободных окон на эту дату.")
+            return
+        d = date.fromisoformat(booking_date)
+        wd = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
+        await _edit_or_send(
+            query,
+            f"🕐 <b>Свободные окна</b>\n"
+            f"{wd}, {d.strftime('%d.%m.%Y')}  •  {svc['name']} ({svc['slots'] * SLOT_DURATION_MIN} мин)",
+            reply_markup=slots_keyboard(slots, booking_date, service_id),
+            parse_mode=ParseMode.HTML,
+        )
 
     # ── My bookings ───────────────────────────────────────
     elif data == "show_my_bookings":

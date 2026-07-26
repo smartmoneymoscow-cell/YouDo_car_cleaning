@@ -50,6 +50,12 @@ def init_db():
             "INSERT INTO services (name, price, slots) VALUES (?, ?, ?)",
             DEFAULT_SERVICES,
         )
+
+    # Migrate: add remind_before column if missing
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(bookings)").fetchall()}
+    if "remind_before" not in cols:
+        conn.execute("ALTER TABLE bookings ADD COLUMN remind_before INTEGER NOT NULL DEFAULT 0")
+
     conn.commit()
     conn.close()
 
