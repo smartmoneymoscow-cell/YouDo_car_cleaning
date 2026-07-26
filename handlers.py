@@ -316,9 +316,29 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         booking_id = int(parts[1])
         action = parts[2]
 
+        def _booking_summary(bk: dict, remind_label: str = "") -> str:
+            d = date.fromisoformat(bk["booking_date"])
+            wd = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][d.weekday()]
+            text = (
+                f"✅ <b>Вы успешно записаны на мойку!</b>\n\n"
+                f"🆔 Номер записи: <b>#{bk['id']}</b>\n"
+                f"🚿 Услуга: <b>{bk['service_name']}</b>\n"
+                f"📅 Дата: <b>{wd}, {d.strftime('%d.%m.%Y')}</b>\n"
+                f"🕐 Время: <b>{bk['slot_start']} – {bk['slot_end']}</b>\n"
+                f"💰 Стоимость: <b>{bk['price']} ₽</b>\n"
+            )
+            if remind_label:
+                text += f"⏰ Напоминание: за <b>{remind_label}</b>\n"
+            text += "\nДо встречи! 🚗"
+            return text
+
         if action == "no":
+            bk = db.get_booking(booking_id)
+            if bk:
+                text = _booking_summary(bk)
+            else:
+                text = "✅ Запись оформлена. До встречи! 🚗"
             ctx.user_data.clear()
-            text = "👍 Готово! До встречи на мойке! 🚗"
             kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Меню", callback_data="back_to_menu")]])
             await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
@@ -335,16 +355,18 @@ async def callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             remind_before = int(action)
             db.set_reminder(booking_id, uid, remind_before)
 
-            # Schedule the reminder
             bk = db.get_booking(booking_id)
             if bk:
                 _schedule_reminder(ctx, booking_id, uid,
                                    bk["booking_date"], bk["slot_start"], remind_before)
 
             label = {30: "30 минут", 60: "1 час", 120: "2 часа", 1440: "день"}.get(remind_before, f"{remind_before} мин")
-            text = f"✅ Напоминание установлено за <b>{label}</b> до записи.\n\nДо встречи! 🚗"
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Меню", callback_data="back_to_menu")]])
+            if bk:
+                text = _booking_summary(bk, remind_label=label)
+            else:
+                text = f"✅ Напоминание установлено за <b>{label}</b>. До встречи! 🚗"
             ctx.user_data.clear()
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Меню", callback_data="back_to_menu")]])
             await _edit_or_send(query, text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
     elif data == "confirm|no":
