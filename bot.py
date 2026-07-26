@@ -59,7 +59,7 @@ async def on_startup():
     db.init_db()
     logger.info("Database initialized")
 
-    await ptb_app.bot.initialize()
+    await ptb_app.initialize()
     await ptb_app.start()
 
     render_url = os.getenv("RENDER_EXTERNAL_URL", "")
