@@ -111,7 +111,7 @@ async def on_startup():
 
     # Start keep-alive background task
     asyncio.create_task(_keep_alive())
-    logger.info("Keep-alive task started (ping every 10 min)")
+    logger.info("Keep-alive task started (ping every 3 min)")
 
 
 @web_app.on_event("shutdown")
@@ -123,7 +123,7 @@ async def on_shutdown():
 # ── Keep-alive ping (Render free tier sleeps after 15 min idle) ──
 
 async def _keep_alive():
-    """Ping own URL every 10 min to prevent Render free tier from sleeping."""
+    """Ping own URL every 3 min to prevent Render free tier from sleeping."""
     await asyncio.sleep(5)  # wait for server to fully start
     while True:
         try:
@@ -138,7 +138,7 @@ async def _keep_alive():
                     logger.info(f"Keep-alive ping: {resp.status_code}")
         except Exception as e:
             logger.warning(f"Keep-alive ping failed: {e}")
-        await asyncio.sleep(600)  # every 10 minutes
+        await asyncio.sleep(180)  # every 3 minutes
 
 
 def main():
